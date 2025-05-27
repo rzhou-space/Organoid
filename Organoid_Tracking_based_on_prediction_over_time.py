@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[11]:
 
 
 import h5py
@@ -13,6 +13,7 @@ import os
 from natsort import os_sorted
 import pyvista as pv
 import tifffile
+import pandas as pd
 
 
 # In[1]:
@@ -79,7 +80,7 @@ import tifffile
 
 # # Cropping single organoid based on the bounding box from Mask-RCNN predictions 
 
-# In[5]:
+# In[22]:
 
 
 # Option 1: Firstly convert it into .h5 file then open. 
@@ -89,13 +90,13 @@ import tifffile
 #     images_t1 = h5f["img"][:]
 
 
-# # Option 2: Directly apply the .tif file. 
-# tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
-# with tifffile.TiffFile(tif_path) as tif:
-#     images_t1 = tif.asarray()  # shape: (num_frames, height, width)
+# Option 2: Directly apply the .tif file. 
+tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
+with tifffile.TiffFile(tif_path) as tif:
+    images_t1 = tif.asarray()  # shape: (num_frames, height, width)
 
 
-# In[6]:
+# In[5]:
 
 
 # h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_h5_video/20181113_HCC_d0-2_t43c1_ORG.h5"
@@ -109,19 +110,19 @@ import tifffile
 #     images_t2 = tif.asarray()  # shape: (num_frames, height, width)
 
 
-# In[7]:
+# In[23]:
 
 
-# bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
+bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
 
-# with h5py.File(bbox_h5_path, "r") as h5f:
-#     t1_x1, t1_y1, t1_z1, t1_x2, t1_y2, t1_z2 = h5f["organoid_10"]["42"]["bbox"][:]
+with h5py.File(bbox_h5_path, "r") as h5f:
+    t1_x1, t1_y1, t1_z1, t1_x2, t1_y2, t1_z2 = h5f["organoid_10"]["42"]["bbox"][:]
 #     t2_x1, t2_y1, t2_z1, t2_x2, t2_y2, t2_z2 = h5f["organoid_10"]["43"]["bbox"][:]
 
-# plt.imshow(images_t1[t1_z1+10][t1_y1:t1_y2, t1_x1:t1_x2])
+plt.imshow(images_t1[t1_z1 + 20][t1_y1:t1_y2, t1_x1:t1_x2])
 
 
-# In[2]:
+# In[24]:
 
 
 # Crop a single organoid based on the bbox from prediction. 
@@ -132,17 +133,22 @@ def crop_organoid(img_stack, x1, y1, z1, x2, y2, z2):
         org_stack.append(img_stack[z][y1:y2, x1:x2]) # Attention the orientation of coordinates. 
     # Volume as a 3D numpy array at the end. 
     volume = np.stack(np.array(org_stack), axis=0)
-    return volume
+    return volume # Z, Y, X dimensions. 
 
 
-# In[10]:
+# In[33]:
 
 
-# volume_t1 = crop_organoid(images_t1, t1_x1, t1_y1, t1_z1, t1_x2, t1_y2, t1_z2)
+volume_t1 = crop_organoid(images_t1, t1_x1, t1_y1, t1_z1, t1_x2, t1_y2, t1_z2)
 # volume_t2 = crop_organoid(images_t2, t2_x1, t2_y1, t2_z1, t2_x2, t2_y2, t2_z2)
 
-# np.shape(volume_t1)
-# plt.imshow(volume_t1[10][:])
+np.shape(volume_t1)
+
+
+# In[34]:
+
+
+volume_t1
 
 
 # In[12]:
@@ -154,6 +160,117 @@ def crop_organoid(img_stack, x1, y1, z1, x2, y2, z2):
 #     file.create_dataset("t42", data=volume_t1)
 #     file.create_dataset("t43", data=volume_t2)
 
+
+# # Padding the volumes based on the maximal moving range. 
+# Padding the volumes or all the 2D stacks so that all the images/volumes are included in the region. Hereby find out the most lowerst corner (minimal of three coordinates) of all bounding boxes and the upperst corner (maximal of three coordinates). Only padd the part of empty space while keeping the original position of single image/volume unchanged. 
+
+# In[20]:
+
+
+# Organoid of intrest. 
+organoid = "organoid_10"
+
+def maximal_region(organoid): # Find the corners of the maximal region that contains all the organoids. 
+    # Create a pandas DataFrame for the bounding boxes corners. 
+    bbox_df = pd.DataFrame(columns=["x1", "y1", "z1", "x2", "y2", "z2"])
+    # Get all the timepoints under the chosen organoid and extract the bounding box into a pandas Dataframe. 
+    with h5py.File(bbox_h5_path, "r") as h5f:
+        single_organoid_layer = h5f[organoid]
+        all_tp = list(single_organoid_layer.keys()) # Get all the time points under this organoid. 
+        for tp in all_tp: 
+            x1, y1, z1, x2, y2, z2 = h5f[organoid][tp]["bbox"][:] # Coordinates of the bounding box. 
+            bbox_df.loc[len(bbox_df)] = [x1, y1, z1, x2, y2, z2]
+    
+    # Find out the lowest corner and the uppest corner over all bounding boxes coordinates. 
+    min_corner = np.array([bbox_df["x1"].min(), bbox_df["y1"].min(), bbox_df["z1"].min()])
+    max_corner = np.array([bbox_df["x2"].max(), bbox_df["y2"].max(), bbox_df["z2"].max()])
+
+    return min_corner, max_corner, bbox_df
+
+maximal_region("organoid_10")
+
+
+# In[31]:
+
+
+# Padding the volume into the maximal movement region with zeros, while preserving the absolute position in space. 
+def pad_volume(organoid, tp, image_stack, bbox_h5_path): 
+    # One of the bounding box volumes. (Contained by the maximal movement region.)
+    with h5py.File(bbox_h5_path, "r") as h5f:
+        x1, y1, z1, x2, y2, z2 = h5f[organoid][tp]["bbox"][:]
+        
+    volume_small = crop_organoid(image_stack, x1, y1, z1, x2, y2, z2)
+
+    # Coordinates of bounding boxes
+    lower_large, upper_large, _ = maximal_region(organoid) # Coordinates of the maximal movement region. 
+    
+    lower_small = np.array([x1, y1, z1])   # Coordinates of the current bounding box. 
+    upper_small = np.array([x2, y2, z2]) 
+    
+    # Calculate size of large box / maximal movement region.
+    shape_large = upper_large - lower_large  # (dx, dy, dz)
+    
+    # Calculate offset of the small volume inside the large one. Determine the size pad befor and after the original object. 
+    pre_pad = lower_small - lower_large       # Number of voxels to pad before (z, y, x)
+    post_pad = upper_large - upper_small     # Padding after
+    
+    # Convert to (z, y, x) order.
+    pre_pad = pre_pad[::-1]
+    post_pad = post_pad[::-1]
+    
+    # Combine padding in ((before, after), ...) for each axis. 
+    padding = tuple(zip(pre_pad, post_pad))  # Format: ((z1, z2), (y1, y2), (x1, x2))
+    
+    # Apply padding
+    volume_padded = np.pad(volume_small, pad_width=padding, mode='constant', constant_values=0) # Result volume in (z, y, x) dimension. 
+
+    return volume_padded
+
+volume_padded = pad_volume("organoid_10", "42", images_t1, bbox_h5_path)
+print("New shape:", volume_padded.shape)
+print(shape_large)
+plt.imshow(volume_padded[20])
+
+
+# # Generate the vtk files with VTK packages 
+# 
+# The bounding boxes of the objects stay still fixed based on the first object outline. As the later points the object moving around or getting larger, the object will be cutted by the outline from the first object. 
+
+# In[40]:
+
+
+# Convert the volume into .vtk with VTK package. 
+import vtk
+from vtk.util import numpy_support
+
+# Create a vtkImageData object 
+def apply_vtk(volume, file_path):
+    # Get the dimensions
+    depth = volume.shape[0]
+    height = volume.shape[1]
+    width = volume.shape[2]
+    
+    # Convert to 1D array for VTK
+    flat_array = volume.flatten()  # Note: Transpose ZYX to match VTK order
+    
+    vtk_data_array = numpy_support.numpy_to_vtk(num_array=flat_array)
+    
+    # Create vtkImageData
+    image_data = vtk.vtkImageData()
+    image_data.SetDimensions(width, height, depth)
+    image_data.SetSpacing(1.0, 1.0, 1.0)  # Set spacing as needed
+    image_data.GetPointData().SetScalars(vtk_data_array)
+    
+    # Save as .vtk file 
+    writer = vtk.vtkXMLImageDataWriter()
+    writer.SetFileName(file_path + ".vti")
+    print("Volume saved as " + file_path + ".vti! Open in ParaView!")
+    writer.SetInputData(image_data)
+    writer.Write()
+
+
+# # Alternative: Pyvista Package. 
+# But at the end the object is not as class vtkImageData. This then influence the further adaptation into Blender with SciBlend, which need vtkImageData. This could also be the reason why the bounding box during animation noch dynamically changed with the object. 
 
 # In[3]:
 
@@ -190,8 +307,8 @@ def convert_vtk(volume, vtk_name):
     # Flatten the 3D volume and assign it to cell data (or point data)
     grid.cell_data["values"] = volume.flatten(order="F")
     # Save the volume as a .vti file
-    grid.save(vtk_name + ".vti")
-    print("Volume saved as " + vtk_name + ".vti! Open in ParaView!")
+    grid.save(vtk_name + ".vtk")
+    print("Volume saved as " + vtk_name + ".vtk! Open in ParaView!")
     # grid information.
     print(grid)
 
@@ -203,7 +320,9 @@ def convert_vtk(volume, vtk_name):
 # convert_vtk(volume_t2, "tp43") # TODO: Run for pyvista version 0.44.1
 
 
-# In[4]:
+# # Summary the whole function. 
+
+# In[41]:
 
 
 # Path to the predictions. 
@@ -213,10 +332,10 @@ bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organo
 data_file_name = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/"
 
 # Path for saving the vtk for the organoid. Generate for each organoid a new folder for storing the corresponding .vtk files. 
-vtk_folder = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/"
+vtk_folder = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/test_results/"
 
 # Path for saving the volume numerical data as .h5 file. 
-new_h5_folder = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_h5_video/" 
+new_h5_folder = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/test_results/" 
 
 # Generate multiple vtk files over multiple time points. 
 def single_organoid_all_tp(organoid): # organoid: str. from the tree of hd5f prediction. 
@@ -225,7 +344,7 @@ def single_organoid_all_tp(organoid): # organoid: str. from the tree of hd5f pre
         single_organoid_layer = h5f[organoid]
         all_tp = list(single_organoid_layer.keys())
     # Test with the first 3 time points (t42, t43, t44). 
-    test_tp = all_tp[0:3]
+    test_tp = ["42", "43", "44", "82"]
     
     # Path for saving the vtk for the organoid. Generate for each organoid a new folder for storing the corresponding .vtk files. 
     new_vtk_folder = vtk_folder + organoid
@@ -242,6 +361,7 @@ def single_organoid_all_tp(organoid): # organoid: str. from the tree of hd5f pre
             # Extract the bounding box for single organoid at one timepoint tp. 
             with h5py.File(bbox_h5_path, "r") as h5f:
                 x1, y1, z1, x2, y2, z2 = h5f[organoid][tp]["bbox"][:]
+            print(x1, y1, z1, x2, y2, z2)
     
             # Crop the organoid over time based on the bounding box range from predictions. 
             volume = crop_organoid(images, x1, y1, z1, x2, y2, z2)
@@ -250,7 +370,7 @@ def single_organoid_all_tp(organoid): # organoid: str. from the tree of hd5f pre
             convert_vtk(volume, new_vtk_folder+"/tp"+tp)
 
 
-# In[5]:
+# In[42]:
 
 
 single_organoid_all_tp("organoid_10")
