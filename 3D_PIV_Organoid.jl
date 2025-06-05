@@ -1,8 +1,6 @@
 using HDF5
 using PyPlot
 using multi_quickPIV
-# using ImageView
-using VTJK
 
 # Function for loading and reading h5 files. 
 function read_h5(folder_path::String, data_name::String)
@@ -11,15 +9,13 @@ function read_h5(folder_path::String, data_name::String)
     end
 end
 
-mask_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_mask.h5"
+mask_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_mask.h5"
 mask_vol_1 = Float32.(read_h5(mask_file_path, "tp42"))
 PyPlot.imshow(mask_vol_1[:,:,32])
 
-organoid_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask.h5"
+organoid_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_with_mask.h5"
 vol_1 = Float32.(read_h5(organoid_file_path, "tp42")) # With size of (x, y, z)
 vol_2 = Float32.(read_h5(organoid_file_path, "tp43"))
-
-
 
 # # Min Max normalisation of 3D array. So that all images have the same range of intensities. 
 # function min_max_normalize(arr::Array{T,3}) where T<:Real
@@ -59,43 +55,74 @@ PyPlot.colorbar()
 # # Since the original volume could be padded, the mask size has also to be fitted in. 
 # pad_mask_1,      _ = pad_to_match_shape(mask_vol_1, pad_vol1)
 
-pivparams = multi_quickPIV.setPIVParameters(interSize=(10, 10, 10), searchMargin=(20, 20, 20), step=(8, 8, 8), 
-    mask_filtFun=(IA)->(IA[div.(size(IA),2)...]), mask_threshold=0.5)
-# IA = div.(size(vol1), 5), ST = div.(IA,4), ST = max.(1, div.(IA,2))
-# Apply the masked 3D PIV. 
-VF, SN = multi_quickPIV.PIV(vol_1, vol_2, mask_vol_1, pivparams, precision=32)
+function PIV_3D_Organoid(organoid_file_path, mask_file_path, tp1, tp2) # paths and tps are string parameters!
+    
+    vol_1 = Float32.(read_h5(organoid_file_path, tp1))
+    vol_2 = Float32.(read_h5(organoid_file_path, tp2))
+    mask_vol_1 = Float32.(read_h5(mask_file_path, tp1))
 
-IA = multi_quickPIV._isize(pivparams)
-ST = multi_quickPIV._step(pivparams)
+    IA = div.(size(vol_1), 6)
 
-U = VF[1, :, :, :] # x component of vectors
-V = VF[2, :, :, :] # y component of vectors 
-W = VF[3, :, :, :] # z component of vectors 
+    pivparams = multi_quickPIV.setPIVParameters(interSize=IA, searchMargin=IA.*2, step=max.(1, div.(IA,2)), 
+                mask_filtFun=(IA)->(IA[div.(size(IA),2)...]), mask_threshold=0.5)
+    
+    # Apply the masked 3D PIV. 
+    VF, SN = multi_quickPIV.PIV(vol_1, vol_2, mask_vol_1, pivparams, precision=32)
+    
+    IA = multi_quickPIV._isize(pivparams)
+    ST = multi_quickPIV._step(pivparams)
+    
+    U = VF[1, :, :, :] # x component of vectors
+    V = VF[2, :, :, :] # y component of vectors 
+    W = VF[3, :, :, :] # z component of vectors 
+    
+    # Thresholding by the vector lengths. 
+    M = sqrt.( U.^ 2 .+ V.^ 2 .+ W.^2) # Magnitude of the vectors.
+    U.*= ( M .< 10 )
+    V.*= ( M .< 10 )
+    W.*= ( M .< 10 )
+    
+    xgrid = [(y-1)*ST[1] + div(IA[1], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
+    ygrid = [(x-1)*ST[2] + div(IA[2], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
+    zgrid = [(z-1)*ST[3] + div(IA[3], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
 
-ygrid = [(y-1)*ST[1] + div(IA[1], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
-xgrid = [(x-1)*ST[2] + div(IA[2], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
-zgrid = [(z-1)*ST[3] + div(IA[3], 2) for y in 1:size(U, 1), x in 1:size(U, 2), z in 1:size(U, 3)]
+    return U, V, W, xgrid, ygrid, zgrid 
+end
 
-VTJK.vectorfield2VTK(U, V, W, fn="/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/test_piv", spacing=(8, 8, 8))
+U, V, W, xgrid, ygrid, zgrid = PIV_3D_Organoid(organoid_file_path, mask_file_path, "tp42", "tp43")
+U
 
+# Direction of the organoid of interest.
+organoid_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_with_mask.h5"
+# all time points. 
+all_tp = h5open(organoid_file_path, "r") do file
+    collect(keys(file))
+end
+
+# Direction of the mask file for the chosen organoid. 
+mask_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_mask.h5"
 # Save the data into a .h5 file. 
-organoid = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV"
+save_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp)"
 # Save to .h5 with subgroups
-
-h5writefile = string(organoid, ".h5") # The file name. 
+h5writefile = string(save_file_path, ".h5") # The file name. 
 
 h5open(h5writefile, "w") do file
-    # Create top-level groups
-    top_group = create_group(file, "tp42-43(step=8)")
-    
-    # Write datasets into groups
-    write(top_group, "U", U)
-    write(top_group, "V", V)
-    write(top_group, "W", W)
-    write(top_group, "xgrid", xgrid)
-    write(top_group, "ygrid", ygrid)
-    write(top_group, "zgrid", zgrid)
-end
+    for t in 1:length(all_tp)
+        U, V, W, xgrid, ygrid, zgrid = PIV_3D_Organoid(organoid_file_path, mask_file_path, all_tp[t], all_tp[t+1])
+        # Create top-level groups
+        top_group = create_group(file, string(all_tp[t], "-", all_tp[t+1]))
+        
+        # Write datasets into groups
+        write(top_group, "U", U)
+        write(top_group, "V", V)
+        write(top_group, "W", W)
+        write(top_group, "xgrid", xgrid)
+        write(top_group, "ygrid", ygrid)
+        write(top_group, "zgrid", zgrid)
+
+        print(string("save", all_tp[t]))
+    end
+end 
 
 
 
