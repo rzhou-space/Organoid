@@ -14,59 +14,6 @@ import pyvista as pv
 # In[2]:
 
 
-file_path = "organoid_10_PIV.h5"
-
-tp = "tp42-43"
-
-with h5py.File(file_path, "r") as h5f:
-    U = h5f[tp]["U"][:] # Output shape is (z, x, y)
-    V = h5f[tp]["V"][:]
-    W = h5f[tp]["W"][:]
-    xgrid = h5f[tp]["xgrid"][:]
-    ygrid = h5f[tp]["ygrid"][:]
-    zgrid = h5f[tp]["zgrid"][:]
-
-
-# In[3]:
-
-
-pos = [0, 0, 0]
-
-u1 = U[pos[0], pos[1], pos[2]]
-v1 = V[pos[0], pos[1], pos[2]]
-w1 = W[pos[0], pos[1], pos[2]]
-x1 = xgrid[pos[0], pos[1], pos[2]]
-y1 = ygrid[pos[0], pos[1], pos[2]]
-z1 = zgrid[pos[0], pos[1], pos[2]]
-
-# Define the vector
-origin = [x1, y1, z1]  # Start point
-vector = [u1, v1, w1]  # Direction and magnitude
-
-# Create the 3D figure
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-
-# Plot the vector using quiver
-ax.quiver(*origin, *vector, color='r', linewidth=2)
-
-# Set limits (optional)
-ax.set_xlim([0, 10])
-ax.set_ylim([0, 10])
-ax.set_zlim([0, 10])
-
-# Labels
-ax.set_xlabel('X')
-ax.set_ylabel('Y')
-ax.set_zlabel('Z')
-
-plt.title("3D Vector Plot")
-plt.show()
-
-
-# In[4]:
-
-
 # Convert 3D arrays into array of (N, 3) shape, where N is the total number of points. 
 def convert_origins_vectors(U, V, W, xgrid, ygrid, zgrid):
     # Flatten all arrays for the origins of vectors. 
@@ -86,7 +33,7 @@ def convert_origins_vectors(U, V, W, xgrid, ygrid, zgrid):
     return origins, vectors 
 
 
-# In[11]:
+# In[3]:
 
 
 def plot_3D_PIV(origins, vectors):
@@ -99,21 +46,20 @@ def plot_3D_PIV(origins, vectors):
         ax.quiver(*origin, *vector, color='r', linewidth=2)
 
 
-# In[18]:
+# In[4]:
 
 
 def create_vtk(origins, vectors, vtk_file_name):
     # Create a PyVista point cloud
     point_cloud = pv.PolyData(origins, force_float=False)
-    
     # Add vectors to the point cloud as point data
     point_cloud["vectors"] = vectors
-    
+    point_cloud.set_active_vectors("vectors")
     # Save as VTK file
-    point_cloud.save(vtk_file_name + ".vtk")
+    point_cloud.arrows.save(vtk_file_name + ".vtk")
 
 
-# In[15]:
+# In[5]:
 
 
 def filter_vectors_through_length(threshold_length, vectors):
@@ -130,21 +76,44 @@ def filter_vectors_through_length(threshold_length, vectors):
     return filt_vectors
 
 
-# In[12]:
+# In[9]:
 
 
-origins, vectors = convert_origins_vectors(U, V, W, xgrid, ygrid, zgrid)
-plot_3D_PIV(origins, vectors)
+# # Convert all PIV vector in h5 files into .vtk file for Visualisation. 
+
+# File path of the generated piv h5 flie from Julia Quick-PIV. 
+piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp).h5"
+with h5py.File(piv_vec_h5_path, 'r') as f:
+    all_tp = list(f.keys())
+    print(all_tp)
+
+# Path for saving the vtk files. 
+piv_vtk_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/PIV_organoid_10/"
+
+for i in range(len(all_tp)):
+    
+    with h5py.File(piv_vec_h5_path, "r") as h5f:
+        U = h5f[all_tp[i]]["U"][:] # Output shape is (z, y, x)
+        V = h5f[all_tp[i]]["V"][:]
+        W = h5f[all_tp[i]]["W"][:]
+        xgrid = h5f[all_tp[i]]["xgrid"][:]
+        ygrid = h5f[all_tp[i]]["ygrid"][:]
+        zgrid = h5f[all_tp[i]]["zgrid"][:]
+    
+    origins, vectors = convert_origins_vectors(U, V, W, xgrid, ygrid, zgrid)
+    # plot_3D_PIV(origins, vectors)
+    create_vtk(origins, vectors, piv_vtk_path+"tp"+str(42+i))
+    print("create"+str(all_tp[i])+".vtk")
 
 
-# In[6]:
+# In[14]:
 
 
 lengths = np.linalg.norm(vectors, axis=1)
-lengths
+plt.hist(lengths)
 
 
-# In[19]:
+# In[15]:
 
 
 filt_vectors = filter_vectors_through_length(10, vectors)
