@@ -17,16 +17,16 @@ import plotly
 # In[2]:
 
 
-piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp).h5"
-i = 10
-with h5py.File(piv_vec_h5_path, 'r') as f:
-    all_tp = list(f.keys()) # all time points/the labels of the top layer. 
-    U = f[all_tp[i]]["U"][:] # Output shape is (z, y, x)
-    V = f[all_tp[i]]["V"][:]
-    W = f[all_tp[i]]["W"][:]
-    xgrid = f[all_tp[i]]["xgrid"][:]
-    ygrid = f[all_tp[i]]["ygrid"][:]
-    zgrid = f[all_tp[i]]["zgrid"][:]   
+# piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp).h5"
+# i = 10
+# with h5py.File(piv_vec_h5_path, 'r') as f:
+#     all_tp = list(f.keys()) # all time points/the labels of the top layer. 
+#     U = f[all_tp[i]]["U"][:] # Output shape is (z, y, x)
+#     V = f[all_tp[i]]["V"][:]
+#     W = f[all_tp[i]]["W"][:]
+#     xgrid = f[all_tp[i]]["xgrid"][:]
+#     ygrid = f[all_tp[i]]["ygrid"][:]
+#     zgrid = f[all_tp[i]]["zgrid"][:]   
 
 
 # ## Generating pseudo tracks based on piv results
@@ -160,29 +160,6 @@ def pseudo_tracking_piv_grid_single(piv_file_path, start_x, start_y, start_z, sc
     return np.array(trajectory_x), np.array(trajectory_y), np.array(trajectory_z) # Final results in image coordinate.
 
 
-# # TODO: Single cell tracking probably makes not very much sense...? 
-
-# In[14]:
-
-
-piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/organoid_10_with_mask_PIV(all_tp).h5"
-x, y, z =pseudo_tracking_piv_grid_single(piv_vec_h5_path, 20, 30, 30)
-x1, y1, z1 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 30)
-x2, y2, z2 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 25)
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-# Create a new figure for 3D plotting
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-# Plot the 3D line
-ax.plot(x, y, z, marker='o')
-ax.plot(x1, y1, z1, marker='o')
-ax.plot(x2, y2, z2, marker='o')
-
-plt.show()
-
-
 # In[16]:
 
 
@@ -213,6 +190,29 @@ def pseudo_tracking_piv_grid(piv_file_path, start_x_array, start_y_array, start_
         all_z_trajectory.append(z_track)
 
     return all_x_trajectory, all_y_trajectory, all_z_trajectory
+
+
+# ## Plot the pseu trajectories in 3D (interactive). 
+
+# In[1]:
+
+
+# piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/organoid_10_with_mask_PIV(all_tp).h5"
+# x, y, z =pseudo_tracking_piv_grid_single(piv_vec_h5_path, 20, 30, 30)
+# x1, y1, z1 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 30)
+# x2, y2, z2 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 25)
+
+# import matplotlib.pyplot as plt
+# from mpl_toolkits.mplot3d import Axes3D
+# # Create a new figure for 3D plotting
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
+# # Plot the 3D line
+# ax.plot(x, y, z, marker='o')
+# ax.plot(x1, y1, z1, marker='o')
+# ax.plot(x2, y2, z2, marker='o')
+
+# plt.show()
 
 
 # In[32]:
