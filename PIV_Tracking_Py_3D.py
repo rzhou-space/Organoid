@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[25]:
 
 
 import h5py
@@ -11,9 +11,10 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.colors import LinearSegmentedColormap
 import pandas
+import plotly
 
 
-# In[12]:
+# In[2]:
 
 
 piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp).h5"
@@ -26,12 +27,6 @@ with h5py.File(piv_vec_h5_path, 'r') as f:
     xgrid = f[all_tp[i]]["xgrid"][:]
     ygrid = f[all_tp[i]]["ygrid"][:]
     zgrid = f[all_tp[i]]["zgrid"][:]   
-
-
-# In[15]:
-
-
-xgrid
 
 
 # ## Generating pseudo tracks based on piv results
@@ -80,7 +75,7 @@ def average_voxel_cube(volume, center, n):
 # print(f"cube: {avg_value}")
 
 
-# In[20]:
+# In[13]:
 
 
 def pseudo_tracking_piv_grid_single(piv_file_path, start_x, start_y, start_z, scale=(1, 1, 1)):
@@ -167,12 +162,13 @@ def pseudo_tracking_piv_grid_single(piv_file_path, start_x, start_y, start_z, sc
 
 # # TODO: Single cell tracking probably makes not very much sense...? 
 
-# In[26]:
+# In[14]:
 
 
-piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/organoid_10_with_mask_PIV(all_tp).h5"
+piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/organoid_10_with_mask_PIV(all_tp).h5"
 x, y, z =pseudo_tracking_piv_grid_single(piv_vec_h5_path, 20, 30, 30)
-x1, y1, z1 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 25, 30, 30)
+x1, y1, z1 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 30)
+x2, y2, z2 = pseudo_tracking_piv_grid_single(piv_vec_h5_path, 15, 30, 25)
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -182,24 +178,22 @@ ax = fig.add_subplot(111, projection='3d')
 # Plot the 3D line
 ax.plot(x, y, z, marker='o')
 ax.plot(x1, y1, z1, marker='o')
+ax.plot(x2, y2, z2, marker='o')
 
 plt.show()
 
 
-# ## Input the PIV data. 
-
-# In[24]:
+# In[16]:
 
 
 # Generation of pseudo tracks with multiple start conditions. 
 
-def pseudo_tracking_piv_grid_v2(U, V, W, t_interval_array, start_x_array, start_y_array, start_z_array,
-                                piv_step_width, scale=(1, 1, 1)):
+def pseudo_tracking_piv_grid(piv_file_path, start_x_array, start_y_array, start_z_array, scale=(1, 1, 1)):
     """
-    # t_interval_array: [[t0, t1], ...] list of two element lists
-    # start_x_array: [[x0], ...] list of one element lists, image coordinates.
-    # start_y_array: [[y0], ...] list of one element lists, image coordinates.
-    # piv_step_width: (step_x, step_y, step_z)
+    Plot the pseudo tracking line in 3D with multiple start points. Over all time points. 
+    # start_x_array: [x0, ...] list of elements, image coordinates.
+    # start_y_array: [y0, ...] list of elements, image coordinates.
+    # start_z_array: [z0, ...] 
     """
     all_x_trajectory = []
     all_y_trajectory = []
@@ -210,10 +204,9 @@ def pseudo_tracking_piv_grid_v2(U, V, W, t_interval_array, start_x_array, start_
         start_x = start_x_array[i]
         start_y = start_y_array[i]
         start_z = start_z_array[i]
-        t_interval = t_interval_array[i]
 
-        x_track, y_track, z_track = pseudo_tracking_piv_grid_single_v2(U, V, W, t_interval, start_x, start_y, start_z, 
-                                                                       piv_step_width, scale)
+        x_track, y_track, z_track = pseudo_tracking_piv_grid_single(piv_file_path, start_x, start_y, start_z, scale)
+        
         # Get the track results in vector field grid and transform into image coordinate.
         all_x_trajectory.append(x_track)
         all_y_trajectory.append(y_track)
@@ -222,31 +215,103 @@ def pseudo_tracking_piv_grid_v2(U, V, W, t_interval_array, start_x_array, start_
     return all_x_trajectory, all_y_trajectory, all_z_trajectory
 
 
-# In[25]:
+# In[32]:
 
 
-# Plot the pseudo track results. TODO: modify it to 3D plot. And later also in vtk for ParaView visualisation. 
-def plot_pseudo_track(track_id, x_track, y_track, t_track, fig_size):
-    plt.style.use('dark_background')
-    colors = list(mcolors.CSS4_COLORS.keys())
+piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/organoid_10_with_mask_PIV(all_tp).h5"
+
+number_n = 10
+start_x = np.random.randint(10, 20, size=number_n)
+start_y = np.random.randint(20, 30, size=number_n)
+start_z = np.random.randint(20, 30, size=number_n)
+
+all_x, all_y, all_z = pseudo_tracking_piv_grid(piv_vec_h5_path, start_x, start_y, start_z) 
+
+
+# In[41]:
+
+
+import plotly.graph_objects as go
+
+lines = []
     
-    plt.figure(figsize=(10, 10))
-    for i in range(len(track_id)):
-        
-        x_cor = x_track[i]
-        y_cor = y_track[i]
-        t_interval = range(t_track[i][0], t_track[i][-1]+1)
-        
-        plt.plot(x_cor, y_cor, color=colors[i], zorder=1)
-        cmap = def_cmap(colors[i])
-        plt.scatter(x_cor, y_cor, c=t_interval, zorder=2, cmap=cmap)
-        plt.annotate(str(track_id[i]), xy = (x_cor[0], y_cor[0]), c=colors[i])
-    
-    plt.xlim(0, fig_size)
-    plt.ylim(0, fig_size)
-    plt.gca().invert_yaxis()
-    #plt.savefig("pseudotrack_img_cor", dpi=300)
-    plt.show()
+for i in range(len(all_x)):
+    track_x, track_y, track_z = all_x[i], all_y[i], all_z[i]
+    lines.append(dict(x=track_x, y=track_y, z=track_z))
+
+
+fig = go.Figure()
+
+# Add each line as a separate trace
+for line in lines:
+    fig.add_trace(go.Scatter3d(
+        x=line['x'],
+        y=line['y'],
+        z=line['z'],
+        line=dict(color="lime", width=8),
+        mode='lines'))
+
+# Add start points. 
+fig.add_trace(go.Scatter3d(
+    x=start_x,
+    y=start_y,
+    z=start_z,
+    mode='markers',               # Show only points (no lines)
+    marker=dict(
+        size=10,                   # Size of the points
+        color='white',           # Color of the points
+        symbol='circle'           # Marker shape
+    ),
+    name='Points'                 # Label for legend
+))
+
+# # Customize layout
+# fig.update_layout(
+#     title="Pseudo Trajectories 3D Organoid 10",
+#     scene=dict(
+#         xaxis_title='X Axis',
+#         yaxis_title='Y Axis',
+#         zaxis_title='Z Axis'
+#     ),
+#     margin=dict(l=0, r=0, b=0, t=40)
+# )
+
+fig.update_layout(
+    title="Pseudo Trajectories 3D Organoid 10",
+    scene=dict(
+        xaxis_title='X (pxl)',
+        yaxis_title='Y (pxl)',
+        zaxis_title='Z (pxl)',
+        xaxis=dict(
+            backgroundcolor="black",
+            gridcolor="gray",
+            showbackground=True,
+            zerolinecolor="white",
+            color='white'  # Axis labels and ticks
+        ),
+        yaxis=dict(
+            backgroundcolor="black",
+            gridcolor="gray",
+            showbackground=True,
+            zerolinecolor="white",
+            color='white'
+        ),
+        zaxis=dict(
+            backgroundcolor="black",
+            gridcolor="gray",
+            showbackground=True,
+            zerolinecolor="white",
+            color='white'
+        ),
+    ),
+    paper_bgcolor="black",   # Outer plot background
+    plot_bgcolor="black",    # Inner plot background
+    font=dict(color='white'), # Text color (title, legend, etc.)
+    margin=dict(l=0, r=0, b=0, t=40)
+)
+
+# Open in browser window
+fig.write_html("multi_3d_lines.html", auto_open=True)
 
 
 # In[ ]:
