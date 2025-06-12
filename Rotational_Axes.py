@@ -10,7 +10,11 @@ import matplotlib.pyplot as plt
 import h5py
 import plotly
 import pyvista as pv
+from sklearn.decomposition import PCA
+import os
 
+
+# # Single timepoint experiment for calculating rotation plane, rotation axis, and rotation center.  
 
 # ## Import the PIV vectors
 # 
@@ -89,8 +93,6 @@ vectors_centered = vectors_filtered - vectors_filtered.mean(axis=0)
 # In[7]:
 
 
-from sklearn.decomposition import PCA
-
 pca = PCA(n_components=3)
 pca.fit(vectors_centered)
 
@@ -139,6 +141,55 @@ np.array([rotation_center])
 
 
 
+# # Summary as a function
+# Apply PCA on the PIV vectors for getting the rotational plane (PC1 and PC2), rotational axis (PC3) and the corresponding variances. Besides, the rotational center will also be calculated (but first in a quick and dirty way -- has to be optimized). 
+
+# In[2]:
+
+
+def pca_piv_vectors(piv_file_path, tp):
+    # Getting the input PIV data. 
+    with h5py.File(piv_file_path, 'r') as f:
+        U = f[tp]["U"][:] # Output shape is (z, y, x)
+        V = f[tp]["V"][:]
+        W = f[tp]["W"][:]
+        xgrid = f[tp]["xgrid"][:]
+        ygrid = f[tp]["ygrid"][:]
+        zgrid = f[tp]["zgrid"][:]   
+
+    # Combine vectors and origins in (N,3) arrays. 
+    # Stack the vector directions to form an (N, 3) array
+    vectors = np.vstack((U.flatten(), V.flatten(), W.flatten())).T
+    # Stack the origins of the vectors to form an (N, 3) array.
+    origins = np.vstack((xgrid.flatten(), ygrid.flatten(), zgrid.flatten())).T
+
+    # Keep only vectors with sufficient magnitude
+    magnitudes = np.linalg.norm(vectors, axis=1) # magnitudes < threshold_piv in Julia already. 
+    threshold = 1e-3
+    mask = magnitudes > threshold  # e.g., threshold = 1e-3. For filtering out the small 
+    vectors_filtered = vectors[mask]
+    # Get the corresponding origins of the vectors left. 
+    origins_filtered = origins[mask]
+
+    # Centering the data. This removes any net translation, isolating rotational structure.
+    vectors_centered = vectors_filtered - vectors_filtered.mean(axis=0)
+
+    # Apply PCA.
+    pca = PCA(n_components=3)
+    pca.fit(vectors_centered)
+    # PCA axes (principal directions)
+    rotation_plane_axes = pca.components_[0:2]  # First two: dominant plane
+    rotation_axis = pca.components_[2]         # Third: least variance → rotation axis
+    # Get the variance/eigenvalues for the first 3 PCs.
+    eigenvalues = pca.explained_variance_[0:3]
+
+    # Calculate the rotation center. 
+    # The middle point of the left vectors after filtering.
+    rotation_center = np.round(np.mean(origins_filtered, axis=0))
+
+    return rotation_plane_axes, rotation_axis, eigenvalues, rotation_center
+
+
 # ## Plot the vector field and the rotational axis. 
 
 # In[11]:
@@ -183,23 +234,27 @@ plot_3D_PIV(origin, vectors, rotation_center, rotation_axis*30)
 
 # ## Store the rotational vectors into .h5 files and visualise in ParaView through .vtk 
 
-# In[14]:
+# In[ ]:
 
 
-h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/"
-vtk_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/Code/Organoid/notebooks/"
+# piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_with_mask_PIV(all_tp).h5"
 
-organoid = "organoid_10" 
+# h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
 
-# Write the rotation axis in the .h5 file. 
-with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
-    time_point_layer = file.create_group("tp"+str(i))
-    time_point_layer.create_dataset("PC1, PC2", data = rotation_plane_axes)
-    time_point_layer.create_dataset("PC3", data = rotation_axis)
-    time_point_layer.create_dataset("variances", data = eigenvalues) # The variances for PC1, PC2, PC3. 
+# vtk_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
+
+# organoid = "organoid_10" 
+
+# with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
+#     time_point_layer = file.create_group("tp"+str(i))
+#     time_point_layer.create_dataset("PC1, PC2", data = rotation_plane_axes) # Rotation plane.
+#     time_point_layer.create_dataset("PC3", data = rotation_axis) # Rotational axis.
+#     time_point_layer.create_dataset("variances", data = eigenvalues) # The variances for PC1, PC2, PC3. 
+#     time_point_layer.create_dataset("rotation center", data = rotation_center) # The origin of the rotation axis. 
+        
 
 
-# In[15]:
+# In[3]:
 
 
 def create_vtk(origins, vectors, vtk_file_name):
@@ -218,7 +273,38 @@ def create_vtk(origins, vectors, vtk_file_name):
 create_vtk(np.array([rotation_center]), np.array([rotation_axis*30]), vtk_file_path+str(i))
 
 
-# # TODO: Temporal change of the rotation axis and center & variance of PC. Correlation between flipping and Variance PC3
+# ## Iteration over all time points. 
+
+# In[4]:
+
+
+piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_with_mask_PIV(all_tp).h5"
+
+h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
+
+vtk_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
+
+organoid = "organoid_10" 
+
+with h5py.File(piv_vec_h5_path, 'r') as f:
+    all_tp = list(f.keys()) # all time points/the labels of the top layer. 
+
+# Path for saving the vtk for the organoid. Generate for each organoid a new folder for storing the corresponding .vtk files. 
+new_vtk_folder = vtk_file_path + organoid + "_rotata_axis/" # Notice the mask in the file name. 
+os.makedirs(new_vtk_folder)
+
+with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
+    for i in range(len(all_tp)):
+        rotation_plane_axes, rotation_axis, eigenvalues, rotation_center = pca_piv_vectors(piv_vec_h5_path, all_tp[i])
+
+        time_point_layer = file.create_group("tp"+str(i))
+        time_point_layer.create_dataset("PC1, PC2", data = rotation_plane_axes) # Rotation plane.
+        time_point_layer.create_dataset("PC3", data = rotation_axis) # Rotational axis.
+        time_point_layer.create_dataset("variances", data = eigenvalues) # The variances for PC1, PC2, PC3. 
+        time_point_layer.create_dataset("rotation center", data = rotation_center) # The origin of the rotation axis. 
+        
+        create_vtk(np.array([rotation_center]), np.array([rotation_axis*30]), new_vtk_folder+"tp"+str(i))
+
 
 # In[ ]:
 
