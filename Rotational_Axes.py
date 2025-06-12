@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[2]:
 
 
 import numpy as np
@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import h5py
 import plotly
 import pyvista as pv
-from sklearn.decomposition import PCA
 import os
 
 
@@ -304,6 +303,205 @@ with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
         time_point_layer.create_dataset("rotation center", data = rotation_center) # The origin of the rotation axis. 
         
         create_vtk(np.array([rotation_center]), np.array([rotation_axis*30]), new_vtk_folder+"tp"+str(i))
+
+
+# # Analysis of the Rotational Axis and the corresponding variance in Correlation with Flipping dynamics.
+
+# ## Import the file with rotation axis information. 
+
+# In[3]:
+
+
+rotation_axis_file = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_rotate_axis.h5"
+organoid = "organoid_10"
+
+with h5py.File(rotation_axis_file, 'r') as f:
+    all_axis = []
+    all_variances = []
+    all_centers = []
+    all_tp = list(f.keys()) # all time points/the labels of the top layer. 
+
+    for i in range(len(all_tp)):
+        rotation_axis = f[all_tp[i]]["PC3"][:]
+        rotation_center = f[all_tp[i]]["rotation center"][:]
+        variances = f[all_tp[i]]["variances"][:]
+        
+        all_axis.append(rotation_axis)
+        all_centers.append(rotation_center)
+        all_variances.append(variances)
+
+
+# ## Plot the temporal rotation axis in 3D and colored by the size of corresponding PC variance. 
+
+# In[4]:
+
+
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.cm import get_cmap
+from matplotlib.colors import Normalize
+
+# Normalize and get colormap
+values = np.array(all_variances)[:,2]
+norm = Normalize(vmin=np.min(values), vmax=np.max(values))
+cmap = plt.colormaps.get_cmap('viridis')  # you can also try 'plasma', 'coolwarm', etc.
+colors = cmap(norm(values))
+
+# Create figure
+fig = plt.figure()
+ax = fig.add_subplot(projection='3d')
+
+origins = np.array(all_centers)
+vectors = np.array(all_axis)
+
+# Plot each vector
+for origin, vector, color in zip(origins, vectors, colors):
+    ax.quiver(*origin, *vector, color=color, linewidth=2)
+
+# Add colorbar
+sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+sm.set_array([])
+fig.colorbar(sm, ax=ax, label='PC3 Variances')
+
+# Normalize and colormap for the dashed line. 
+norm_2 = Normalize(vmin=np.min(0), vmax=np.max(len(origins)))
+cmap_2 = plt.colormaps.get_cmap("Greys")
+colors_2 = cmap_2(norm_2(range(len(origins))))
+
+# Plot colored dashed lines between consecutive origins
+for i in range(len(origins)-1):
+    x = [origins[i][0], origins[i+1][0]]
+    y = [origins[i][1], origins[i+1][1]]
+    z = [origins[i][2], origins[i+1][2]]
+    ax.plot(x, y, z, linestyle='--', color=colors_2[i])
+
+# Labels
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_box_aspect([1,1,1])
+ax.view_init(elev=30, azim=45) 
+plt.show()
+
+
+# In[5]:
+
+
+import numpy as np
+import plotly.graph_objects as go
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+
+def create_circle_around_vector(origin, vector, radius=0.2, n_points=50):
+    # Normalize vector
+    v = vector / np.linalg.norm(vector)
+
+    # Find two orthogonal vectors perpendicular to v. 
+    # Alternative: could also use normalised PC1 and PC2. 
+    if np.allclose(v, [0, 0, 1]):
+        perp1 = np.cross(v, [1, 0, 0])
+    else:
+        perp1 = np.cross(v, [0, 0, 1])
+    perp1 /= np.linalg.norm(perp1)
+    perp2 = np.cross(v, perp1)
+
+    # Create points of the circle
+    theta = np.linspace(0, 2 * np.pi, n_points)
+    circle_points = np.array([
+        origin + radius * (np.cos(t) * perp1 + np.sin(t) * perp2)
+        for t in theta
+    ])
+    return circle_points
+
+
+# In[6]:
+
+
+# multiple vectors with origins
+origins = np.array(all_centers)
+vectors = np.array(all_axis)
+
+# Define the colormap normalisation for the vector lines. 
+values = np.array(all_variances)[:,2]
+norm = mcolors.Normalize(vmin=np.min(values), vmax=np.max(values))
+colormap = plt.colormaps.get_cmap('viridis')  # or 'plasma', 'coolwarm', etc.
+# Convert to hex color strings for Plotly
+colors = [mcolors.to_hex(colormap(norm(v))) for v in values]
+
+# Define the colormap normalization for the dashed lines between two consecutive origins. 
+# Generate "time" or "index" values to map to color
+values_dash = np.linspace(0, 1, len(origins) - 1)  # one value per segment
+# Normalize and get colormap
+norm_dash = mcolors.Normalize(vmin=np.min(values_dash), vmax=np.max(values_dash))
+colormap_dash = plt.colormaps.get_cmap('spring')  # or viridis, inferno, etc.
+colors_dash = [mcolors.to_hex(colormap_dash(norm_dash(v))) for v in values_dash]
+
+# Start plot
+fig = go.Figure()
+
+# Plot each vector and circle
+for origin, vector, color in zip(origins, vectors, colors):
+    # Line segment for the vector
+    end = origin + vector
+    fig.add_trace(go.Scatter3d(
+        x=[origin[0], end[0]], # start points and end points of the lines. 
+        y=[origin[1], end[1]],
+        z=[origin[2], end[2]],
+        mode='lines',
+        line=dict(color=color, width=5),
+        showlegend=False
+    ))
+
+    # Circle around the vector
+    circle = create_circle_around_vector(origin, vector, radius=0.2)
+    fig.add_trace(go.Scatter3d(
+        x=circle[:, 0],
+        y=circle[:, 1],
+        z=circle[:, 2],
+        mode='lines',
+        line=dict(color='red', dash='dash'),
+        showlegend=False
+    ))
+
+# Add colorbar manually using dummy scatter
+# (Optional: helpful for interpreting color mapping)
+fig.add_trace(go.Scatter3d(
+    x=[None], y=[None], z=[None],
+    mode='markers',
+    marker=dict(
+        colorscale='viridis',
+        cmin=np.min(values),
+        cmax=np.max(values),
+        colorbar=dict(title="Variance PC3"), # Eigenvalues. Absolute variance for PC. 
+        color=values, size=0  # invisible, just for colorbar
+    ),
+    showlegend=False
+))
+
+# Add dashed lines between origins. 
+for i in range(len(origins)-1):
+    p1, p2 = origins[i], origins[i + 1]
+    fig.add_trace(go.Scatter3d(
+        x=[p1[0], p2[0]],
+        y=[p1[1], p2[1]],
+        z=[p1[2], p2[2]],
+        mode='lines',
+        line=dict(color=colors_dash[i], width=5, dash='dash'),
+        showlegend=False
+    ))
+
+# Layout settings
+fig.update_layout(
+    scene=dict(
+        xaxis_title='X',
+        yaxis_title='Y',
+        zaxis_title='Z',
+        aspectmode='data'
+    ),
+    title='3D Vectors with Perpendicular Circles',
+    margin=dict(l=0, r=0, b=0, t=30)
+)
+
+fig.write_html("filename.html", auto_open=True)
 
 
 # In[ ]:
