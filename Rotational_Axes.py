@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 
 import numpy as np
@@ -191,7 +191,7 @@ def pca_piv_vectors(piv_file_path, tp):
 
 # ## Plot the vector field and the rotational axis. 
 
-# In[11]:
+# In[3]:
 
 
 # Convert 3D arrays into array of (N, 3) shape, where N is the total number of points. 
@@ -253,7 +253,7 @@ plot_3D_PIV(origin, vectors, rotation_center, rotation_axis*30)
         
 
 
-# In[3]:
+# In[4]:
 
 
 def create_vtk(origins, vectors, vtk_file_name):
@@ -274,19 +274,19 @@ create_vtk(np.array([rotation_center]), np.array([rotation_axis*30]), vtk_file_p
 
 # ## Iteration over all time points. 
 
-# In[4]:
+# In[5]:
 
 
-piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_with_mask_PIV(all_tp).h5"
+piv_vec_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/new_padding/organoid_34/organoid_34_with_mask_PIV(all_tp).h5"
 
-h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
+h5_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_34/"
 
-vtk_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/"
+vtk_file_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_34/"
 
-organoid = "organoid_10" 
+organoid = "organoid_34" 
 
 with h5py.File(piv_vec_h5_path, 'r') as f:
-    all_tp = list(f.keys()) # all time points/the labels of the top layer. 
+    all_tp = list(f.keys()) # all time points/the labels of the top layer.
 
 # Path for saving the vtk for the organoid. Generate for each organoid a new folder for storing the corresponding .vtk files. 
 new_vtk_folder = vtk_file_path + organoid + "_rotata_axis/" # Notice the mask in the file name. 
@@ -309,22 +309,25 @@ with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
 
 # ## Import the file with rotation axis information. 
 
-# In[3]:
+# In[4]:
 
 
-rotation_axis_file = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_vti/new_padding/organoid_10_rotate_axis.h5"
-organoid = "organoid_10"
+rotation_axis_file = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/new_padding/organoid_34/organoid_34_rotate_axis.h5"
+organoid = "organoid_34"
 
 with h5py.File(rotation_axis_file, 'r') as f:
     all_axis = []
     all_variances = []
     all_centers = []
     all_tp = list(f.keys()) # all time points/the labels of the top layer. 
+    # Sort the tp order through integer order instead of string order. 
+    all_tp_sorted = sorted(all_tp, key=lambda x: int(x[2:]))
+    print(all_tp_sorted)
 
-    for i in range(len(all_tp)):
-        rotation_axis = f[all_tp[i]]["PC3"][:]
-        rotation_center = f[all_tp[i]]["rotation center"][:]
-        variances = f[all_tp[i]]["variances"][:]
+    for i in all_tp_sorted:
+        rotation_axis = f[i]["PC3"][:]
+        rotation_center = f[i]["rotation center"][:]
+        variances = f[i]["variances"][:]
         
         all_axis.append(rotation_axis)
         all_centers.append(rotation_center)
@@ -333,7 +336,7 @@ with h5py.File(rotation_axis_file, 'r') as f:
 
 # ## Plot the temporal rotation axis in 3D and colored by the size of corresponding PC variance. 
 
-# In[4]:
+# In[5]:
 
 
 from mpl_toolkits.mplot3d import Axes3D
@@ -383,7 +386,7 @@ ax.view_init(elev=30, azim=45)
 plt.show()
 
 
-# In[5]:
+# In[11]:
 
 
 import numpy as np
@@ -413,7 +416,7 @@ def create_circle_around_vector(origin, vector, radius=0.2, n_points=50):
     return circle_points
 
 
-# In[6]:
+# In[12]:
 
 
 # multiple vectors with origins
