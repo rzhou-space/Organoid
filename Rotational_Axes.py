@@ -312,8 +312,8 @@ with h5py.File(h5_file_path+organoid+"_rotate_axis.h5", "w") as file:
 # In[4]:
 
 
-rotation_axis_file = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/new_padding/organoid_34/organoid_34_rotate_axis.h5"
-organoid = "organoid_34"
+organoid = "organoid_10"
+rotation_axis_file = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/new_padding/"+organoid+"/"+organoid+"_rotate_axis.h5"
 
 with h5py.File(rotation_axis_file, 'r') as f:
     all_axis = []
@@ -350,7 +350,7 @@ cmap = plt.colormaps.get_cmap('viridis')  # you can also try 'plasma', 'coolwarm
 colors = cmap(norm(values))
 
 # Create figure
-fig = plt.figure()
+fig = plt.figure(dpi=300)
 ax = fig.add_subplot(projection='3d')
 
 origins = np.array(all_centers)

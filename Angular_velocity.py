@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[6]:
 
 
 import numpy as np
@@ -11,7 +11,7 @@ import h5py
 
 # # Single Organoid Angular Velocity Calculation
 
-# In[36]:
+# In[7]:
 
 
 # # Import the organid center information.
@@ -29,7 +29,7 @@ import h5py
 #     center = f[tp]["rotation center"][:]
 
 
-# In[30]:
+# In[8]:
 
 
 # # Import the PIV vectors information for the estimation of the angular velocity.
@@ -63,7 +63,7 @@ import h5py
 # origins_filtered = origins[mask]
 
 
-# In[40]:
+# In[9]:
 
 
 # Calculate the single angular speed.
@@ -80,13 +80,13 @@ def single_point_angular_speed(center, origin, vector, time_width):
     return angular_speed*unit_h # The final unit would be 1/h = rad/h pysically in the context of angular speed.
 
 
-# In[41]:
+# In[10]:
 
 
-single_point_angular_speed(center, origins_filtered[0], vectors_filtered[0], 30)
+# single_point_angular_speed(center, origins_filtered[0], vectors_filtered[0], 30)
 
 
-# In[42]:
+# In[11]:
 
 
 # Cauclate the mean angular speed of all IA (PIV vectors) at one single time point. 
@@ -101,16 +101,10 @@ def one_time_point_angular_speed(center, origins, vectors, time_width):
         vector = vectors[i]
         angular_speed = single_point_angular_speed(center, origin, vector, time_width)
         all_angular_speed.append(angular_speed)
-    return np.mean(np.array(all_angular_speed)) # Due to the function of single_point_angular_speed()
+    return np.mean(np.array(all_angular_speed)), np.array(all_angular_speed) # Due to the function of single_point_angular_speed()
 
 
-# In[44]:
-
-
-one_time_point_angular_speed(center, origins_filtered, vectors_filtered, 30)
-
-
-# In[53]:
+# In[12]:
 
 
 # Calculate the angular speed for all time points for a given organoid/the given path. 
@@ -131,9 +125,11 @@ def angular_speed_over_time(organoid):
             all_centers.append(center)
     
     # For each time point, calculate the angular speed. 
-    all_angular_speed = []
+    all_mean_angular_speed = [] # Store the mean angular speed at each time point. 
+    all_variance = [] # Store the variance at each time point for marking the error bar. 
+    all_angular_speed = [] # Store all the angular speed at each time point. 
     
-    with h5py.File(piv_vec_h5_path, 'r') as f:
+    with h5py.File(piv_file_path, 'r') as f:
         all_tp = list(f.keys()) # all time points/the labels of the top layer. 
         
         for i in range(len(all_centers)):
@@ -161,36 +157,55 @@ def angular_speed_over_time(organoid):
     
             # Calculation of the angular speed for the i-th time point. 
             center = all_centers[i]
-            angular_speed = one_time_point_angular_speed(center, origins_filtered, vectors_filtered, 30)
-            all_angular_speed.append(angular_speed)
+            mean_angular_speed, angular_speed = one_time_point_angular_speed(center, origins_filtered, vectors_filtered, 30)
             
-    return np.array(all_angular_speed)
+            all_mean_angular_speed.append(mean_angular_speed)
+            all_variance.append(np.var(angular_speed))
+            all_angular_speed.append(angular_speed)
+
+    return np.array(all_mean_angular_speed), np.array(all_variance), all_angular_speed
 
 
-# In[59]:
+# In[13]:
 
 
-angular_speed_organoid_10 = angular_speed_over_time("organoid_10") # Small organoid. 
-angular_speed_organoid_34 = angular_speed_over_time("organoid_34") # Large organoid. 
+mean_angular_speed_org10, variance_org10, angular_speed_org10 = angular_speed_over_time("organoid_10") # Small organoid. 
+mean_angular_speed_org34, variance_org34, angular_speed_org34 = angular_speed_over_time("organoid_34") # Large organoid. 
 
 
-# In[58]:
+# In[14]:
 
 
-angular_speed_organoid_10
+max(np.concatenate(angular_speed_org10))
 
 
-# # TODO: Add the rest of angular speed points to the mean values -- so that the distribution of the values can be seen.
-
-# In[63]:
+# In[15]:
 
 
 # Compare the angular speed over time between large (organoid 34) and small (organod 10) organoids. And add axis labels.
 
-plt.figure()
-plt.plot([i for i in range(len(angular_speed_organoid_10))], angular_speed_organoid_10, label="organoid_10(Small)")
-plt.plot([i for i in range(len(angular_speed_organoid_34))], angular_speed_organoid_34, label="organoid_34(Large)")
+import scipy as sp # For the median filter. 
+
+time_width = 30 # The time distance between frames. 
+time_convert = time_width/60 # Convert time into hours. 
+
+plt.figure(dpi=300)
+plt.plot([i*time_convert for i in range(len(mean_angular_speed_org10))], mean_angular_speed_org10, color="blue", alpha=0.3)
+# Apply the meadian filter for smoothing the curve and show the variance as error bars. 
+plt.errorbar([i*time_convert for i in range(len(mean_angular_speed_org10))], 
+             sp.signal.medfilt(mean_angular_speed_org10, 5), yerr=variance_org10, fmt="-o", capsize=3,
+             color="blue", ecolor="lightblue", label="organoid_10(Small)")
+
+plt.plot([i*time_convert for i in range(len(mean_angular_speed_org34))], mean_angular_speed_org34, color="orange", alpha = 0.3)
+# Apply the median filter for smoothing the curve. 
+plt.errorbar([i*time_convert for i in range(len(mean_angular_speed_org34))], 
+             sp.signal.medfilt(mean_angular_speed_org34, 5), yerr=variance_org34, fmt="-o", capsize=3,
+             color="orange", ecolor="bisque", label="organoid_34(Large)")
+
 plt.legend()
+plt.xlabel("Time (h)")
+plt.ylabel("Angular Velocity (rad/h)")
+plt.xticks([0, 5, 10, 15, 20])
 plt.show()
 
 
