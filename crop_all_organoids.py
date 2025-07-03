@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 import tifffile
+from vedo import Box, Text3D, show
 
 
 # # Single time all organoids crop
@@ -46,7 +47,7 @@ def find_org_at_tp(bbox_h5_path, tp):
 
 
 def collect_coordinates(bbox_h5_path, tp):
-    # collect the coordinates of all bounding boxes and corresponding organoids. Buil list of tupples. 
+    # collect the coordinates of all bounding boxes and corresponding organoids. Build list of tupples. 
     boxes = []
     # Find out the organoids that are present at the given time point tp. 
     org_at_tp = find_org_at_tp(bbox_h5_path, tp)
@@ -101,10 +102,92 @@ def overlap_bbox_mask(prediction_file, original_tif_file, tp):
     return np.array(images * mask_volume)
 
 
-tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
-bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
+def filter_bbox(bbox_h5_path, min_duration, min_volume):
+    # Filter the bounding boxes (over all predictioins and whole time period) given the thresholds of duration and volume. 
+    filtered_bbox = []
+    with h5py.File(bbox_h5_path, 'r') as f:
+        # Get all top-level names (all organoid ids)
+        top_level_keys = list(f.keys())
 
-box_coordinate = collect_coordinates(bbox_h5_path, "42")
+        # Iterate over all organoids. 
+        for org in top_level_keys:
+            single_organoid_layer = f[org]
+            # Get the time duration that is recorded under organoid org. 
+            all_tp = list(single_organoid_layer.keys())
+            duration = len(all_tp)
+
+            if duration >= min_duration: # First filtering through minminal time duration. 
+
+                # calculate the mean volume of bounding box after the first filtering through time duration.
+                all_volume = []
+                for tp in all_tp:
+                    x1, y1, z1, x2, y2, z2 = f[org][tp]["bbox"][:]
+                    volume = abs(x2-x1) * abs(y2-y1) * abs(z2-z1) # in voxel
+                    all_volume.append(volume)
+                # The mean volume over all existing time points.
+                mean_volume = round(np.mean(np.array(all_volume)))
+
+                # Second filtering through the minimal volume.
+                if mean_volume >= min_volume:
+                    filtered_bbox.append([duration, mean_volume, org])
+
+    return filtered_bbox # Bounding Boxes with duration and size larger than given thresholds. Recoorded in the formate [duration, mean volume in voxels, organoid_id]
+
+
+def plot_annotation_bounding_box(box_coordinate):
+    # Plotting the bounding boxes with its annotation (the id of organoids) in interactive 3D image. 
+    # box_coordinate has the tuple formate: ((x1, y1, z1), (x2, y2, z2), 'organoid_id'), where x, y, z the coordinate of the bounding box corner coordinates. 
+
+    boxes = []
+    labels = []
+
+    for box in box_coordinate:
+        boxes.append(box[0]+box[1])
+        labels.append(box[2][-2:])
+    print(boxes)
+    print(labels)
+
+    actors = []
+
+    for i, (x1,y1,z1,x2,y2,z2) in enumerate(boxes):
+        box = Box(pos=[(x1+x2)/2, (y1+y2)/2, (z1+z2)/2],
+                length=abs(x2-x1), width=abs(y2-y1), height=abs(z2-z1),
+                c='lightblue', alpha=0.3)
+        actors.append(box)
+        
+        label_pos = (x2 + 0.1, y2 + 0.1, z2 + 0.1)  # offset to be outside the box
+        label = Text3D(labels[i], pos=label_pos, s=20, c='red')
+        actors.append(label)
+
+    show(actors)
+
+
+
+
+# -------------------"__main__"---------------------
+
+if __name__ == "__main__":
+
+    tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
+    bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
+
+    filtered_box = filter_bbox(bbox_h5_path, 30, 50*100*100)
+    print(filtered_box)
+
+    
+
+
+
+    
+
+                
+    
+
+
+
+
+
+# Sorting kriterium of the bounding boxes. -- size and time length 
 
 
 
@@ -112,28 +195,3 @@ box_coordinate = collect_coordinates(bbox_h5_path, "42")
 # TODO: Possible to overlap with original images?
 
 
-from vedo import Box, Text3D, show
-
-boxes = []
-labels = []
-
-for box in box_coordinate:
-    boxes.append(box[0]+box[1])
-    labels.append(box[2][-2:])
-print(boxes)
-print(labels)
-
-
-actors = []
-
-for i, (x1,y1,z1,x2,y2,z2) in enumerate(boxes):
-    box = Box(pos=[(x1+x2)/2, (y1+y2)/2, (z1+z2)/2],
-              length=abs(x2-x1), width=abs(y2-y1), height=abs(z2-z1),
-              c='lightblue', alpha=0.3)
-    actors.append(box)
-    
-    label_pos = (x2 + 0.1, y2 + 0.1, z2 + 0.1)  # offset to be outside the box
-    label = Text3D(labels[i], pos=label_pos, s=20, c='red')
-    actors.append(label)
-
-show(actors)
