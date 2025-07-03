@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import h5py
 import tifffile
 from vedo import Box, Text3D, show
+import re
 
 
 # # Single time all organoids crop
@@ -28,16 +29,16 @@ from vedo import Box, Text3D, show
 #     bbx = f["organoid_10"]["42"]["bbox"][:]
 
 
-def find_org_at_tp(bbox_h5_path, tp):
+def find_org_at_tp(organoid_list, tp):
     # Sort out the detected organoids at given time point. 
     
     org_at_tp = []
     
     with h5py.File(bbox_h5_path, 'r') as f:
         # Get all top-level names (groups or datasets)
-        top_level_keys = list(f.keys())
+        # top_level_keys = list(f.keys())
         # Iterate over all organoids. 
-        for org in top_level_keys:
+        for org in organoid_list:
             single_organoid_layer = f[org]
             # Get all time points that is under organoid org. 
             all_tp = list(single_organoid_layer.keys())
@@ -46,15 +47,15 @@ def find_org_at_tp(bbox_h5_path, tp):
     return org_at_tp
 
 
-def collect_coordinates(bbox_h5_path, tp):
+def collect_coordinates(organoid_list, tp):
     # collect the coordinates of all bounding boxes and corresponding organoids. Build list of tupples. 
+    # organoid list: ["organoid_id", ...]
     boxes = []
-    # Find out the organoids that are present at the given time point tp. 
-    org_at_tp = find_org_at_tp(bbox_h5_path, tp)
-    
+    organoid_at_tp = find_org_at_tp(organoid_list, tp)
+
     with h5py.File(bbox_h5_path, 'r') as f:
         # Iterate over all organoids that are present at tp. 
-        for org in org_at_tp:
+        for org in organoid_at_tp:
             x1, y1, z1, x2, y2, z2 = f[org][tp]["bbox"][:] # Coordinates of the bounding box. 
             boxes.append(((x1, y1, z1), (x2, y2, z2), org)) # Save the corners of bbox and organoids as tuple. 
     return boxes
@@ -101,7 +102,7 @@ def overlap_bbox_mask(prediction_file, original_tif_file, tp):
     # Overlap the original volome at time point tp with the bounding box mask. 
     return np.array(images * mask_volume)
 
-
+# # VERY IMPORTANT ONE!
 def filter_bbox(bbox_h5_path, min_duration, min_volume):
     # Filter the bounding boxes (over all predictioins and whole time period) given the thresholds of duration and volume. 
     filtered_bbox = []
@@ -143,9 +144,8 @@ def plot_annotation_bounding_box(box_coordinate):
 
     for box in box_coordinate:
         boxes.append(box[0]+box[1])
-        labels.append(box[2][-2:])
-    print(boxes)
-    print(labels)
+        id = re.search(r'(\d{1,3})$', box[2])
+        labels.append(id.group(1))
 
     actors = []
 
@@ -162,6 +162,18 @@ def plot_annotation_bounding_box(box_coordinate):
     show(actors)
 
 
+def plot_filtered_bounding_box(bbox_h5_path, min_duration, min_volume, tp):
+    # Generate the list of boxes after filtering through duration and mean volume -- for one given time point..
+    filtered_box = filter_bbox(bbox_h5_path, min_duration, min_volume)
+    # Find the corresponding bounding box coordinates based on the organoids_id in after filtering. 
+    filtered_box_id = []
+    for box in filtered_box:
+        filtered_box_id.append(box[2])
+    # Plot the filtered bounding boxes for a time point. 
+    filtered_box_coord = collect_coordinates(filtered_box_id, tp)
+    plot_annotation_bounding_box(filtered_box_coord)
+
+
 
 
 # -------------------"__main__"---------------------
@@ -171,24 +183,25 @@ if __name__ == "__main__":
     tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
     bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
 
-    filtered_box = filter_bbox(bbox_h5_path, 30, 50*100*100)
-    print(filtered_box)
+    plot_filtered_bounding_box(bbox_h5_path, 30, 50*100*100, '42')
 
+
+
+
+
+
+    # from vedo import Volume, Plotter, Video
+    # # All boxes over all time points. 
+    # plotter = Plotter(interactive=False)
+    # for tp in range(42, 45):
+    #     plotter.clear()
+    #     box_coordinate = collect_coordinates(bbox_h5_path, str(tp))
+    #     plot_annotation_bounding_box(box_coordinate)
+    #     plotter.screenshot(f"frame_{str(tp)}.png") # BUT: single image cannot increase the quality of image. 
+    #     print(tp)
     
-
-
-
-    
-
-                
-    
-
-
-
-
 
 # Sorting kriterium of the bounding boxes. -- size and time length 
-
 
 
 # TODO: When the size of the whole 3D image is too large, can also make it possible for subregions presentation. 
