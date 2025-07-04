@@ -8,6 +8,7 @@ import h5py
 import tifffile
 from vedo import Box, Text3D, show
 import re
+import pyvista as pv
 
 
 # # Single time all organoids crop
@@ -102,6 +103,7 @@ def overlap_bbox_mask(prediction_file, original_tif_file, tp):
     # Overlap the original volome at time point tp with the bounding box mask. 
     return np.array(images * mask_volume)
 
+
 # # VERY IMPORTANT ONE!
 def filter_bbox(bbox_h5_path, min_duration, min_volume):
     # Filter the bounding boxes (over all predictioins and whole time period) given the thresholds of duration and volume. 
@@ -162,8 +164,9 @@ def plot_annotation_bounding_box(box_coordinate):
     show(actors)
 
 
-def plot_filtered_bounding_box(bbox_h5_path, min_duration, min_volume, tp):
-    # Generate the list of boxes after filtering through duration and mean volume -- for one given time point..
+def plot_filtered_bounding_box_vedo(bbox_h5_path, min_duration, min_volume, tp):
+    # 3D interactive plots with annotation through vedo for the filtered bounding boxes. Only for one time point. 
+    # Generate the list of boxes after filtering through duration and mean volume.
     filtered_box = filter_bbox(bbox_h5_path, min_duration, min_volume)
     # Find the corresponding bounding box coordinates based on the organoids_id in after filtering. 
     filtered_box_id = []
@@ -174,6 +177,43 @@ def plot_filtered_bounding_box(bbox_h5_path, min_duration, min_volume, tp):
     plot_annotation_bounding_box(filtered_box_coord)
 
 
+def plot_filtered_bounding_box_paraview(bbox_h5_path, t_start, t_end, 
+                                        min_duration, min_volume, vtk_save_path):
+    ## 3D interactive image without annotations, only bounding box outlines. Visualization through ParaView. For all time points. 
+    ## t_start, t_end: int. for the start and end time points for bounding box visualisation.
+    ## min_duration, min_volume: int. the thresholds for filtering bounding boxes.
+    ## vtk_save_path: string. the path for saving the resulting vtk. files. If necessary creating new folder. 
+
+    # Generate the list of filtered bounding boxes based on minimal duratioin and mean volume. 
+    filtered_box = filter_bbox(bbox_h5_path, min_duration, min_volume)
+    # Get the corresponding bounding box id list. 
+    filtered_box_id = []
+    for box in filtered_box:
+        filtered_box_id.append(box[2])
+
+    # Iterrate over all time points from t_start to t_end and generate the outlines at each time point. 
+    for tp in [str(t) for t in range(t_start, t_end+1)]: 
+        # The coordinates of filtered boxes that appears at time point tp. 
+        filtered_box_coord = collect_coordinates(filtered_box_id, tp)
+        # Create a single MultiBlock dataset to hold all outlines
+        outline_blocks = pv.MultiBlock()
+
+        for box in filtered_box_coord: # [(x1, y1, z1), (x2, y2, z2), 'organoid_id']
+            x1, y1, z1 = box[0][:]
+            x2, y2, z2 = box[1][:]
+            # Get the bounds of the box.
+            bounds = [x1, x2, y1, y2, z1, z2]
+            # Create a box from bounds
+            box = pv.Box(bounds=bounds)
+            # Extract the outline (wireframe)
+            outline = box.extract_feature_edges()
+            # Add it to the multiblock
+            outline_blocks.append(outline)
+
+        # Combine all outlines into a single mesh
+        all_outlines = outline_blocks.combine()
+        # Save as vtk files.
+        all_outlines.save(vtk_save_path + "/tp" + tp + ".vtk")
 
 
 # -------------------"__main__"---------------------
@@ -182,24 +222,11 @@ if __name__ == "__main__":
 
     tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
     bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
-
-    plot_filtered_bounding_box(bbox_h5_path, 30, 50*100*100, '42')
-
-
-
+    # Create new folder for storing bounding box.
+    plot_filtered_bounding_box_paraview(bbox_h5_path, 42, 80, 30, 50*50*50, 
+                                       "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/bounding_boxes/filter_test")
 
 
-
-    # from vedo import Volume, Plotter, Video
-    # # All boxes over all time points. 
-    # plotter = Plotter(interactive=False)
-    # for tp in range(42, 45):
-    #     plotter.clear()
-    #     box_coordinate = collect_coordinates(bbox_h5_path, str(tp))
-    #     plot_annotation_bounding_box(box_coordinate)
-    #     plotter.screenshot(f"frame_{str(tp)}.png") # BUT: single image cannot increase the quality of image. 
-    #     print(tp)
-    
 
 # Sorting kriterium of the bounding boxes. -- size and time length 
 
