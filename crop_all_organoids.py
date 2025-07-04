@@ -62,46 +62,46 @@ def collect_coordinates(organoid_list, tp):
     return boxes
 
 
-def bbox_mask_single_box(bbox_h5_path, tp, images):
-    # Create an empty volume with the same shape as the input original data. 
-    empty_volume = np.zeros((np.shape(images)))
-    # collect all the bounding boxes that present at the given time point tp. 
-    boxes = collect_coordinates(bbox_h5_path, tp)
-    # Assign values to each box in the volume. 
-    for i, (start, end, label) in enumerate(boxes, start=1):
-        x1, y1, z1 = start
-        x2, y2, z2 = end
-        xmin, xmax = sorted([x1, x2])
-        ymin, ymax = sorted([y1, y2])
-        zmin, zmax = sorted([z1, z2])
-        empty_volume[zmin:zmax+1, ymin:ymax+1, xmin:xmax+1] = i # Each bounding box an individual value.
-    return empty_volume
+# def bbox_mask_single_box(bbox_h5_path, tp, images):
+#     # Create an empty volume with the same shape as the input original data. 
+#     empty_volume = np.zeros((np.shape(images)))
+#     # collect all the bounding boxes that present at the given time point tp. 
+#     boxes = collect_coordinates(bbox_h5_path, tp)
+#     # Assign values to each box in the volume. 
+#     for i, (start, end, label) in enumerate(boxes, start=1):
+#         x1, y1, z1 = start
+#         x2, y2, z2 = end
+#         xmin, xmax = sorted([x1, x2])
+#         ymin, ymax = sorted([y1, y2])
+#         zmin, zmax = sorted([z1, z2])
+#         empty_volume[zmin:zmax+1, ymin:ymax+1, xmin:xmax+1] = i # Each bounding box an individual value.
+#     return empty_volume
 
 
-def bbox_mask(bbox_h5_path, tp, images):
-    # Create an empty volume with the same shape as the input original data. 
-    empty_volume = np.zeros((np.shape(images)))
-    # collect all the bounding boxes that present at the given time point tp. 
-    boxes = collect_coordinates(bbox_h5_path, tp)
-    # Assign values to each box in the volume. 
-    for i, (start, end, label) in enumerate(boxes, start=1):
-        x1, y1, z1 = start
-        x2, y2, z2 = end
-        xmin, xmax = sorted([x1, x2])
-        ymin, ymax = sorted([y1, y2])
-        zmin, zmax = sorted([z1, z2])
-        empty_volume[zmin:zmax+1, ymin:ymax+1, xmin:xmax+1] = 1 # Each bounding box the same value 1.
-    return empty_volume
+# def bbox_mask(bbox_h5_path, tp, images):
+#     # Create an empty volume with the same shape as the input original data. 
+#     empty_volume = np.zeros((np.shape(images)))
+#     # collect all the bounding boxes that present at the given time point tp. 
+#     boxes = collect_coordinates(bbox_h5_path, tp)
+#     # Assign values to each box in the volume. 
+#     for i, (start, end, label) in enumerate(boxes, start=1):
+#         x1, y1, z1 = start
+#         x2, y2, z2 = end
+#         xmin, xmax = sorted([x1, x2])
+#         ymin, ymax = sorted([y1, y2])
+#         zmin, zmax = sorted([z1, z2])
+#         empty_volume[zmin:zmax+1, ymin:ymax+1, xmin:xmax+1] = 1 # Each bounding box the same value 1.
+#     return empty_volume
 
 
-def overlap_bbox_mask(prediction_file, original_tif_file, tp):
-    # The original tif images at time point tp. 
-    with tifffile.TiffFile(original_tif_file) as tif:
-        images = tif.asarray()  # shape: (num_frames, height, width)
-    # make bounding box mask from the prediction h5 file for the given time point tp. 
-    mask_volume = bbox_mask(prediction_file, tp, images)
-    # Overlap the original volome at time point tp with the bounding box mask. 
-    return np.array(images * mask_volume)
+# def overlap_bbox_mask(prediction_file, original_tif_file, tp):
+#     # The original tif images at time point tp. 
+#     with tifffile.TiffFile(original_tif_file) as tif:
+#         images = tif.asarray()  # shape: (num_frames, height, width)
+#     # make bounding box mask from the prediction h5 file for the given time point tp. 
+#     mask_volume = bbox_mask(prediction_file, tp, images)
+#     # Overlap the original volome at time point tp with the bounding box mask. 
+#     return np.array(images * mask_volume)
 
 
 # # VERY IMPORTANT ONE!
@@ -216,22 +216,80 @@ def plot_filtered_bounding_box_paraview(bbox_h5_path, t_start, t_end,
         all_outlines.save(vtk_save_path + "/tp" + tp + ".vtk")
 
 
+def convert_vtk(volume, vtk_name):
+    # Create the ImageData
+    grid = pv.ImageData()
+    # Set the dimension. 
+    # depth, height, width = volume.shape
+    grid.dimensions = np.array(volume.shape) + 1
+    # Edit the spatial reference
+    grid.origin = (0, 0, 0)
+    grid.spacing = (1, 1, 1) # Scaling fator 2 in the depth direction. 
+    # Flatten the 3D volume and assign it to cell data (or point data)
+    grid.cell_data["values"] = volume.flatten(order="F")
+    # Save the volume as a .vti file
+    grid.save(vtk_name + ".vti")
+    print("Volume saved as " + vtk_name + ".vti! Open in ParaView!")
+    # grid information.
+    print(grid)
+
+
+def filtered_organoids_paraview(bbox_h5_path, tif_file_folder, t_start, t_end, 
+                                min_duration, min_volume, vtk_save_path):
+    ## Extract the organoids based on the filtering of the bounding box. 
+    ## tif_file_folder: the path to the folder where all original .tif files are stored. 
+    ## vtk_save_path: the path to the folder that schould store all generated .vtk files. Set new folder if necessary. 
+
+    # Generate the list of filtered bounding boxes based on minimal duratioin and mean volume. 
+    filtered_box = filter_bbox(bbox_h5_path, min_duration, min_volume)
+    # Get the corresponding bounding box id list. 
+    filtered_box_id = []
+    for box in filtered_box:
+        filtered_box_id.append(box[2])
+
+    # Iterrate over all time points from t_start to t_end and generate the outlines at each time point. 
+    for tp in [str(t) for t in range(t_start, t_end+1)]: 
+
+        # Load the original image data. 
+        file_name = "20181113_HCC_d0-2_t"+tp+"c1_ORG.tif"
+        img_path = tif_file_folder + file_name
+        with tifffile.TiffFile(img_path) as tif:
+            img = tif.asarray()  # shape: (depth(z), height(y), width(x))
+
+        # The coordinates of filtered boxes that appears at time point tp. 
+        filtered_box_coord = collect_coordinates(filtered_box_id, tp)
+            
+        # Create an empty volume same shape as original, filled with zeros
+        combined = np.zeros_like(img)
+        for box in filtered_box_coord: # [(x1, y1, z1), (x2, y2, z2), 'organoid_id']
+            x1, y1, z1 = box[0][:]
+            x2, y2, z2 = box[1][:]
+            # Extract the subvolume from the original image
+            sub = img[z1:z2, y1:y2, x1:x2]
+            # Paste it into the combined volume at the correct position
+            combined[z1:z2, y1:y2, x1:x2] = sub
+        
+        convert_vtk(combined, vtk_save_path + "/tp"+ tp)
+
+
+
 # -------------------"__main__"---------------------
 
 if __name__ == "__main__":
 
     tif_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/20181113_HCC_d0-2_t42c1_ORG.tif"
     bbox_h5_path = "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/predictions/organoid4D_tp_42_82_z_0_870_min_preds_10.h5"
-    # Create new folder for storing bounding box.
-    plot_filtered_bounding_box_paraview(bbox_h5_path, 42, 80, 30, 50*50*50, 
+    
+    ##  ATTENTION: When overlap two objects in ParaView: the coodinates are shifted. Has to set bounding boxes under Transformation: scale: (-1, 1, 1) and orientation: (0, 90, 0)
+    plot_filtered_bounding_box_paraview(bbox_h5_path, 42, 43, 30, 50*50*50, 
                                        "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/bounding_boxes/filter_test")
 
+    filtered_organoids_paraview(bbox_h5_path, 
+                                "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/HCC_42_91_tif_video/original_tif_data/",
+                                42, 43, 30, 50*50*50,
+                                "/Users/rzhoufias.uni-frankfurt.de/Documents/PhD_Franziska/Organoid/organoid_3Dtrack/data/bounding_boxes/org_crop_test")
 
-
-# Sorting kriterium of the bounding boxes. -- size and time length 
-
-
-# TODO: When the size of the whole 3D image is too large, can also make it possible for subregions presentation. 
-# TODO: Possible to overlap with original images?
+    ## ATTENTION: vedo: bounding boxes + annotations (organoid_id) --> not suitable for large microscopy images.
+    ##  ATTENTION: ParaView: bounding boxes + organoids image --> not suitable for annotation shown as texts. 
 
 
